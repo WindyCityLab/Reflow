@@ -47,13 +47,15 @@ void setup() {
   // wait for MAX chip to stabilize
   delay(500);
   Serial.println(thermocouple.readCelsius());
-  
-  while (1) {
-    digitalWrite(RELAY_PIN,LOW);
-    delay(2000);
-    digitalWrite(RELAY_PIN,HIGH);
-    delay(2000);  
-  };
+
+// Debug
+//  while (1) {
+//    digitalWrite(RELAY_PIN,LOW);
+//    delay(2000);
+//    digitalWrite(RELAY_PIN,HIGH);
+//    delay(2000);  
+//  };
+
 }
 
 void loop() {
