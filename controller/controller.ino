@@ -8,7 +8,7 @@ typedef enum {
   Rising, Falling
 } RisingFalling;
 
-float currentTemp = 0;
+double currentTemp = 0;
 float percentageOverUnder = 0.02; // 2%
 long delayTimer = 0;
 
@@ -21,7 +21,7 @@ long holdTimer = 0;
 
 uint8_t stage = 0;
 
-RingBuffer buffer;
+RingBuffer buff;
 Relay relay;
 
 // Example creating a thermocouple instance with software SPI on any three
@@ -41,7 +41,7 @@ void setup() {
   Serial.begin(9600);
 
   relay = Relay();
-  buffer = RingBuffer();
+  buff = RingBuffer();
   //  digitalWrite(RELAY, HIGH); // Remove power
   Serial.println("WCL Oven Initialized...");
   // wait for MAX chip to stabilize
@@ -60,8 +60,9 @@ void setup() {
 
 void loop() {
   relay.process();
-  if (Serial.available())
+  if (Serial)
   {
+      Serial.print("relay.process here"); Serial.print(" Temp: "); Serial.print(thermocouple.readCelsius());Serial.print("\n");
     manageSetPoint();
     Serial.print("Stage "); Serial.print(stage); Serial.println(" Complete.");
     stage++;
@@ -92,22 +93,27 @@ bool manageSetPoint()
     {
       delayTimer = millis();
       float value = thermocouple.readCelsius();
-      buffer.addToBuffer(value);
-      if (buffer.full())
+      buff.addToBuffer(value);
+      if (buff.full())
       {
-        currentTemp = buffer.average();
+        currentTemp = buff.average();
         Serial.print(millis()); Serial.print(","); Serial.println(currentTemp);
         if (currentTemp >= setPoints[stage]) {
           relay.setState(false, 10);
-          //        digitalWrite(RELAY, HIGH); // Turn off elements
+                  //digitalWrite(RELAY_PIN, HIGH); // Turn off elements
           if (direction[stage] == Rising)
           {
             setPointReached = true;
           }
         }
         else {
-          relay.setState(true, 7);
-          //        digitalWrite(RELAY, LOW);  // Turn on elements
+          if(currentTemp > 200){
+            relay.setState(true, 15);
+          }
+          else{
+            relay.setState(true, 7);
+          }
+          //digitalWrite(RELAY_PIN, LOW);  // Turn on elements
           if (direction[stage] == Falling)
           {
             setPointReached = true;

@@ -11,7 +11,7 @@ RingBuffer::RingBuffer()
 float RingBuffer::average()
 {
   float value = 0;
-  for (int i = 0; i <= _ringSize; i++)
+  for (int i = 0; i < _ringSize; i++)
   {
     value = value + _buffer[i];
   }
