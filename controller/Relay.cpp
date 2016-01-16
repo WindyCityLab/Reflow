@@ -1,37 +1,39 @@
 #include "Relay.h"
 #include "Arduino.h"
 
+#define PERIOD 100 // milliseconds 
+#define OFF LOW
+#define ON HIGH
+
 Relay::Relay()
 {
   pinMode(RELAY_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, HIGH);
   _time = millis();
   _currentState = true;
-  _dutyCycle = 10;
-  _counter = 0;
 }
 
-void Relay::setState(bool isOn, int dutyCycle)
+void Relay::setState(bool isOn, float dutyCycle)
 {
   _currentState = !isOn;
-  _dutyCycle = dutyCycle;
-  _counter = 0;
+  _time = millis() + (long)(dutyCycle * PERIOD);
 }
-
 void Relay::process()
 {
-  if (millis() > _time + 100)
+  if (millis() > _time)
   {
-    if (_counter < _dutyCycle)
+    digitalWrite(RELAY_PIN, OFF);
+  }
+  else
+  {
+    if (_currentState)
     {
-      digitalWrite(RELAY_PIN, _currentState);
+      digitalWrite(RELAY_PIN, ON);
     }
     else
     {
-      digitalWrite(RELAY_PIN, HIGH);
+      digitalWrite(RELAY_PIN, OFF);
     }
-    _counter = (_counter + 1) % 10;
-    _time = millis();
   }
 }
 

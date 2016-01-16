@@ -3,26 +3,21 @@
 #include "Adafruit_MAX31855.h"
 #include "RingBuffer.h"
 #include "Relay.h"
+#include "SimpleTimer.h"
 
-typedef enum {
-  Rising, Falling
-} RisingFalling;
-
-double currentTemp = 0;
-float percentageOverUnder = 0.02; // 2%
-long delayTimer = 0;
-
-#define NUMBER_OF_STAGES 10
-float setPoints[NUMBER_OF_STAGES] = {150, 160, 170, 180, 190, 200, 225, 240, 220, 0};  //Desire temperature
-int times[NUMBER_OF_STAGES] =       {0,    20,  20,  20,  20,  20,   0,  60,  30, 0}; //Time required to stay in this state before transitioning to the next one
-RisingFalling direction[NUMBER_OF_STAGES] = {Rising, Rising, Rising, Rising, Rising, Rising, Rising, Rising, Falling, Falling}; //
-
-long holdTimer = 0;
-
-uint8_t stage = 0;
+enum States {
+  PREHEAT,
+  SOAK,
+  REFLOW,
+  DWELL,
+  COOL,
+  FINISHED,
+  NUMBER_OF_STATES
+};
 
 RingBuffer buff;
 Relay relay;
+SimpleTimer timer;
 
 // Example creating a thermocouple instance with software SPI on any three
 // digital IO pins.
@@ -30,102 +25,81 @@ Relay relay;
 #define CS   4
 #define CLK  5
 
+bool timeOut = false;
+
 Adafruit_MAX31855 thermocouple(CLK, CS, DO);
 
-// Example creating a thermocouple instance with hardware SPI (Uno/Mega only)
-// on a given CS pin.
-//#define CS   10
-//Adafruit_MAX31855 thermocouple(CS);
+typedef struct fsm_struct
+{
+  float tempTarget;
+  float delayTime;
+  float pwmRelay;
+  bool coilsOn;
+  States nextState[2];
+} fsm_s;
+
+fsm_s fsm[NUMBER_OF_STATES] = {
+  /* PREHEAT */ {150, 100, 0.5, true, {PREHEAT, SOAK}},
+  /* SOAK    */ {200, 200, 0.5, true, {SOAK, REFLOW}},
+  /* REFLOW  */ {100, 225, 0.5, true, {REFLOW, DWELL}},
+  /* DWELL   */ {15, 225, 0.25, true, {DWELL, COOL}},
+  /* COOL    */ {300, 0, 0, false, {COOL, FINISHED}},
+  /* FINISHED*/ {0, 0, 0, false, {FINISHED, FINISHED}}
+};
+
+States currentState = PREHEAT;
+int timerID = -1;
+uint8_t timeExpired = 0;
+
+void timerExpired()
+{
+  timeExpired = 1;
+  timerID = -1;
+}
+
+void printTemp()
+{
+  Serial.print(thermocouple.readCelsius());
+  switch (currentState)
+  {
+    case PREHEAT : Serial.println(", PREHEAT"); break;
+    case SOAK : Serial.println(", SOAK"); break;
+    case REFLOW : Serial.println(", REFLOW"); break;
+    case DWELL : Serial.println(", DWELL"); break;
+    case COOL : Serial.println(", COOL"); break;
+    case FINISHED : Serial.println(", FINISHED"); break;
+  }
+}
 
 void setup() {
   Serial.begin(9600);
 
   relay = Relay();
   buff = RingBuffer();
-  //  digitalWrite(RELAY, HIGH); // Remove power
+  currentState = PREHEAT;
   Serial.println("WCL Oven Initialized...");
-  // wait for MAX chip to stabilize
   delay(500);
   Serial.println(thermocouple.readCelsius());
+  timer.setInterval(1000, printTemp);
+}
 
-// Debug
-//  while (1) {
-//    digitalWrite(RELAY_PIN,LOW);
-//    delay(2000);
-//    digitalWrite(RELAY_PIN,HIGH);
-//    delay(2000);  
-//  };
-
+void handleOutputs()
+{
+  timeExpired = false;
+  if (timerID == -1)
+  {
+    timerID = timer.setTimeout(fsm[currentState].delayTime, timerExpired);
+    relay.setState(fsm[currentState].coilsOn, fsm[currentState].pwmRelay);
+  }
 }
 
 void loop() {
   relay.process();
-  if (Serial)
-  {
-      Serial.print("relay.process here"); Serial.print(" Temp: "); Serial.print(thermocouple.readCelsius());Serial.print("\n");
-    manageSetPoint();
-    Serial.print("Stage "); Serial.print(stage); Serial.println(" Complete.");
-    stage++;
-    if (stage >= NUMBER_OF_STAGES)
-    {
-      relay.setState(true,10);
-      Serial.print("All Stages Completed, Current Temp: ");
-      Serial.println(thermocouple.readCelsius());
-      while (1){
-        relay.process();
-      }
-    }
-  }
-}
+  timer.run();
 
-bool manageSetPoint()
-{
-  long timeToExitStage = (times[stage] * 1000) + millis();
-  Serial.print("Seeking set point: "); Serial.print(setPoints[stage]); Serial.print(" with delay "); Serial.print(times[stage]); Serial.print(" Exit Time: "); Serial.println(timeToExitStage);
+  currentState = fsm[currentState].nextState[timeExpired];
+  handleOutputs();
 
-  boolean setPointReached = false;
-  delayTimer = millis();
-
-  while (true)
-  {
-    relay.process();
-    if (millis() > delayTimer + 1000)
-    {
-      delayTimer = millis();
-      float value = thermocouple.readCelsius();
-      buff.addToBuffer(value);
-      if (buff.full())
-      {
-        currentTemp = buff.average();
-        Serial.print(millis()); Serial.print(","); Serial.println(currentTemp);
-        if (currentTemp >= setPoints[stage]) {
-          relay.setState(false, 10);
-                  //digitalWrite(RELAY_PIN, HIGH); // Turn off elements
-          if (direction[stage] == Rising)
-          {
-            setPointReached = true;
-          }
-        }
-        else {
-          if(currentTemp > 200){
-            relay.setState(true, 15);
-          }
-          else{
-            relay.setState(true, 7);
-          }
-          //digitalWrite(RELAY_PIN, LOW);  // Turn on elements
-          if (direction[stage] == Falling)
-          {
-            setPointReached = true;
-          }
-        }
-        if (setPointReached && timeToExitStage < millis())
-        {
-          break;
-        }
-      }
-    }
-  }
 }
 
 
