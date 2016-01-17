@@ -1,7 +1,5 @@
-
 #include <SPI.h>
 #include "Adafruit_MAX31855.h"
-#include "RingBuffer.h"
 #include "Relay.h"
 #include "SimpleTimer.h"
 
@@ -15,7 +13,6 @@ enum States {
   NUMBER_OF_STATES
 };
 
-RingBuffer buff;
 Relay relay;
 SimpleTimer timer;
 
@@ -31,26 +28,25 @@ Adafruit_MAX31855 thermocouple(CLK, CS, DO);
 
 typedef struct fsm_struct
 {
-  float tempTarget;
-  float delayTime;
-  float pwmRelay;
-  bool coilsOn;
+  float targetTemperature;
+  float timeInState;
   States nextState[2];
 } fsm_s;
 
 fsm_s fsm[NUMBER_OF_STATES] = {
-  /* PREHEAT */ {150, 100, 0.5, true, {PREHEAT, SOAK}},
-  /* SOAK    */ {200, 200, 0.5, true, {SOAK, REFLOW}},
-  /* REFLOW  */ {100, 225, 0.5, true, {REFLOW, DWELL}},
-  /* DWELL   */ {15, 225, 0.25, true, {DWELL, COOL}},
-  /* COOL    */ {300, 0, 0, false, {COOL, FINISHED}},
-  /* FINISHED*/ {0, 0, 0, false, {FINISHED, FINISHED}}
+  /* PREHEAT */ {150, 100, {PREHEAT, SOAK}},
+  /* SOAK    */ {180, 200, {SOAK, REFLOW}},
+  /* REFLOW  */ {225, 75, {REFLOW, DWELL}},
+  /* DWELL   */ {225, 10, {DWELL, COOL}},
+  /* COOL    */ {0, 0, {COOL, FINISHED}},
+  /* FINISHED*/ {0, 0, {FINISHED, FINISHED}}
 };
 
 States currentState = PREHEAT;
 int timerID = -1;
 uint8_t timeExpired = 0;
-
+volatile float currentTemp = 0;
+volatile bool readTemp = false;
 void timerExpired()
 {
   timeExpired = 1;
@@ -59,7 +55,12 @@ void timerExpired()
 
 void printTemp()
 {
-  Serial.print(thermocouple.readCelsius());
+  readTemp = true;
+  Serial.print(fsm[currentState].targetTemperature);
+  Serial.print(", ");
+  Serial.print(currentTemp);
+  Serial.print(", ");
+  Serial.print(relay.currentDutyCycle());
   switch (currentState)
   {
     case PREHEAT : Serial.println(", PREHEAT"); break;
@@ -72,15 +73,13 @@ void printTemp()
 }
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
 
   relay = Relay();
-  buff = RingBuffer();
   currentState = PREHEAT;
-  Serial.println("WCL Oven Initialized...");
-  delay(500);
-  Serial.println(thermocouple.readCelsius());
-  timer.setInterval(1000, printTemp);
+  Serial.print("WCL Oven Initialized... Current temp: ");
+  currentTemp = thermocouple.readCelsius();
+  Serial.println(currentTemp);
 }
 
 void handleOutputs()
@@ -88,18 +87,29 @@ void handleOutputs()
   timeExpired = false;
   if (timerID == -1)
   {
-    timerID = timer.setTimeout(fsm[currentState].delayTime, timerExpired);
-    relay.setState(fsm[currentState].coilsOn, fsm[currentState].pwmRelay);
+    timerID = timer.setTimeout(fsm[currentState].timeInState * 1000, timerExpired);
+    relay.setTargetTemp(fsm[currentState].targetTemperature);
   }
 }
 
 void loop() {
-  relay.process();
-  timer.run();
+  while (!Serial.available());
+  timer.setInterval(1000, printTemp);
 
-  currentState = fsm[currentState].nextState[timeExpired];
-  handleOutputs();
+  Serial.println("Starting Reflow...");
+  while (1) {
+    if (readTemp)
+    {
+      currentTemp = thermocouple.readCelsius();
+      readTemp = false;
+    }
 
+    relay.process(currentTemp);
+    timer.run();
+
+    currentState = fsm[currentState].nextState[timeExpired];
+    handleOutputs();
+  }
 }
 
 
