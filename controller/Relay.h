@@ -11,6 +11,7 @@ class Relay
     void setTargetTemp(float desiredTemp);
     void process(float currentTemp);
     float currentDutyCycle();
+    float reset;
     
   private:
     bool _currentState;

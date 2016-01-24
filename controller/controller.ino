@@ -6,6 +6,7 @@
 enum States {
   PREHEAT,
   SOAK,
+  SOAK2,
   REFLOW,
   DWELL,
   COOL,
@@ -34,10 +35,11 @@ typedef struct fsm_struct
 } fsm_s;
 
 fsm_s fsm[NUMBER_OF_STATES] = {
-  /* PREHEAT */ {150, 100, {PREHEAT, SOAK}},
-  /* SOAK    */ {180, 200, {SOAK, REFLOW}},
-  /* REFLOW  */ {225, 75, {REFLOW, DWELL}},
-  /* DWELL   */ {225, 10, {DWELL, COOL}},
+  /* PREHEAT */ {165, 90, {PREHEAT, SOAK}},
+  /* SOAK    */ {200, 90, {SOAK, SOAK2}},
+  /* SOAK2   */ {245, 30, {SOAK2, REFLOW}},
+  /* REFLOW  */ {290, 30, {REFLOW, DWELL}},
+  /* DWELL   */ {245, 30, {DWELL, COOL}},
   /* COOL    */ {0, 0, {COOL, FINISHED}},
   /* FINISHED*/ {0, 0, {FINISHED, FINISHED}}
 };
@@ -61,10 +63,13 @@ void printTemp()
   Serial.print(currentTemp);
   Serial.print(", ");
   Serial.print(relay.currentDutyCycle());
+  Serial.print(", ");
+  Serial.print(relay.reset);
   switch (currentState)
   {
     case PREHEAT : Serial.println(", PREHEAT"); break;
     case SOAK : Serial.println(", SOAK"); break;
+    case SOAK2 : Serial.println(", SOAK2"); break;
     case REFLOW : Serial.println(", REFLOW"); break;
     case DWELL : Serial.println(", DWELL"); break;
     case COOL : Serial.println(", COOL"); break;
@@ -73,7 +78,7 @@ void printTemp()
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(9600);
 
   relay = Relay();
   currentState = PREHEAT;

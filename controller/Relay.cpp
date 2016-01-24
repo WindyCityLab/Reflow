@@ -2,7 +2,9 @@
 #include "Arduino.h"
 
 #define PERIOD 100.0 // milliseconds 
-#define GAIN 2.0
+#define K (2.0 / 100.0)
+#define tau_i 25000.0
+#define MAX_DUTY_CYCLE 1.0
 
 #define OFF LOW
 #define ON HIGH
@@ -14,6 +16,7 @@ Relay::Relay()
   _currentState = OFF;
   _timeToFlip = 0;
   _dutyCycle = 0.5;
+  reset = 0.0;
 }
 
 void Relay::setTargetTemp(float desiredTemp)
@@ -26,8 +29,18 @@ float Relay::currentDutyCycle()
 }
 void Relay::process(float currentTemp)
 {
-  if (_desiredTemp < currentTemp) _dutyCycle = 0;
-  else _dutyCycle = min(((_desiredTemp - currentTemp) / 100.0) * GAIN,0.9);
+  float error = _desiredTemp - currentTemp;
+  reset = max(min(reset + (K / tau_i) * error,MAX_DUTY_CYCLE),0);
+  reset = 0; // Disable the I component for now
+  float output =  K * error + reset;
+  if (output < 0)
+  {
+    _dutyCycle = 0;
+  }
+  else
+  {
+    _dutyCycle = min(output, MAX_DUTY_CYCLE);
+  }
   
   if (millis() > _timeToFlip)
   {
@@ -35,13 +48,11 @@ void Relay::process(float currentTemp)
     {
       _currentState = OFF;
       _timeToFlip = millis() + (unsigned long)((1.0 - _dutyCycle) * PERIOD);
-//      Serial.print("Now LOW, current Time: "); Serial.print(millis()); Serial.print("  Turning HIGH at: "); Serial.println(_timeToFlip);
     }
     else
     {
       _currentState = ON;
       _timeToFlip = millis() + (unsigned long)(_dutyCycle * PERIOD);
-//      Serial.print("Now HIGH, current Time: "); Serial.print(millis()); Serial.print("  Turning LOW at: "); Serial.println(_timeToFlip);
 
     }
   }
